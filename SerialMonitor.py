@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from datetime import datetime
+from datetime import timedelta
 
 
 SERIAL_PORT = 'COM4'
@@ -27,6 +28,9 @@ tempData = []
 humData = []
 pressData = []
 
+startTime = datetime.now()
+endTime = datetime.now()
+
 packet = []
 countery = 0
 counterx = 0
@@ -40,6 +44,10 @@ packetIndex = 0
 bytesToRead = 0
 eco2 = 0
 tvoc = 0
+baseline = 0
+
+deltaMinutes = 0
+minuteCount = 0
 
 
 def receive_packet():
@@ -54,16 +62,22 @@ def receive_packet():
     global lastPacketIndex
     global eco2
     global tvoc
+    global deltaMinutes
+    global endTime
+    global deltaMinute
+    global startTime
+    global baseline
+    packetLength = 30
 
     bytesToRead = ser.inWaiting()
-    while(bytesToRead < 26):
+    while(bytesToRead < 30):
         bytesToRead = ser.inWaiting()
 
     packet = ser.read(bytesToRead)
 
     start = packet.find(b'\xaa')
 
-    if packet[start+25] == 0xff:
+    if packet[start+29] == 0xff:
         temperature = (int.from_bytes(
             packet[start+1:start+5], byteorder='big')*0.01)
         humidity = (int.from_bytes(
@@ -74,13 +88,20 @@ def receive_packet():
             packet[start+13:start+17], byteorder='big'))
         tvoc = (int.from_bytes(
             packet[start+17:start+21], byteorder='big'))
-        packetIndex = (int.from_bytes(
+        baseline = (int.from_bytes(
             packet[start+21:start+25], byteorder='big'))
+        packetIndex = (int.from_bytes(
+            packet[start+25:start+29], byteorder='big'))
+
+    # deltaSeconds = (endTime-startTime).seconds
 
     if lastPacketIndex != packetIndex:
         lostPacketCount = lostPacketCount+(packetIndex-lastPacketIndex)-1
-        print(
-            f"packet index: {packetIndex} lost packets: {lostPacketCount} total packet loss: {round((lostPacketCount/packetIndex)*100)}%")
+
+        # print(
+        #     f"seconds elapsed: {deltaMinutes} packet index: {packetIndex} lost packets: {lostPacketCount} total packet loss: {round((lostPacketCount/packetIndex)*100)}%")
+        # startTime = datetime.now()
+
         if(lostPacketCount < 0):
             lostPacketCount = 0
 
@@ -159,17 +180,25 @@ try:
     # ser.flushInput()
     # ser.close()
     #! end
+    startTime = datetime.now()
     flag = True
-    #! data log block
+#! data log block
+
     while flag == True:
         receive_packet()
-        print(
-            f"{datetime.now().strftime('%H:%M:%S.%f')[:-4]} Temp: {round(temperature,2)} Humid: {round(humidity,2)} Press: {round(pressure,4)} Eco2: {eco2} Tvoc: {tvoc}\n")
-        with open(dataPath, 'a') as file_obj:
-            file_obj.write(
-                f"{datetime.now().strftime('%H:%M:%S.%f')[:-4]},{round(temperature,2)},{round(humidity,2)},{round(pressure,4)},{eco2},{tvoc},\n")  # todo fix excel datetime
-    file_obj.close()
+        endTime = datetime.now()
 
+        deltaSeconds = (endTime-startTime).seconds
+        if deltaSeconds > 30:
+            deltaMinutes = deltaMinutes + 1
+
+            print(
+                f"{datetime.now().strftime('%H:%M:%S')} Temp: {round(temperature,2)} Humid: {round(humidity,2)} Press: {round(pressure,4)} Eco2: {eco2} Tvoc: {tvoc} BaseLine: {baseline}\n")
+            with open(dataPath, 'a') as file_obj:
+                file_obj.write(
+                    f"{datetime.now().strftime('%H:%M:%S')},{round(temperature,2)},{round(humidity,2)},{round(pressure,4)},{eco2},{tvoc},{baseline}\n")  # todo fix excel datetime
+            file_obj.close()
+            startTime = datetime.now()
 except KeyboardInterrupt:
     ser.close()
     flag = False
